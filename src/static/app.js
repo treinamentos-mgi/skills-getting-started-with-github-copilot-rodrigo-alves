@@ -12,20 +12,95 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.querySelectorAll("option:not(:first-child)").forEach((option) => option.remove());
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
         activityCard.className = "activity-card";
 
-        const spotsLeft = details.max_participants - details.participants.length;
+        const participants = details.participants || [];
+        const spotsLeft = details.max_participants - participants.length;
 
         activityCard.innerHTML = `
           <h4>${name}</h4>
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          <p class="activity-availability"><strong>Availability:</strong> <span class="availability-count">${spotsLeft} spots left</span></p>
+          <div class="participants-section">
+            <h5 class="participants-title">Participants <span class="participant-count">${participants.length}</span></h5>
+            <ul class="participant-list"></ul>
+          </div>
         `;
+
+        const participantList = activityCard.querySelector(".participant-list");
+        if (participants.length === 0) {
+          const emptyMessage = document.createElement("li");
+          emptyMessage.className = "participant-empty";
+          emptyMessage.textContent = "No participants yet";
+          participantList.appendChild(emptyMessage);
+        }
+
+        participants.forEach((email) => {
+          const participant = document.createElement("li");
+          participant.className = "participant-row";
+
+          const participantEmail = document.createElement("span");
+          participantEmail.className = "participant-email";
+          participantEmail.textContent = email;
+
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "remove-participant";
+          removeButton.textContent = "\u{1F5D1}";
+          removeButton.title = "Cancel signup";
+          removeButton.setAttribute("aria-label", `Cancel signup for ${email}`);
+          removeButton.addEventListener("click", async () => {
+            removeButton.disabled = true;
+
+            try {
+              const response = await fetch(
+                `/activities/${encodeURIComponent(name)}/signup?email=${encodeURIComponent(email)}`,
+                { method: "DELETE" }
+              );
+              const result = await response.json();
+
+              if (!response.ok) {
+                throw new Error(result.detail || "Failed to cancel signup");
+              }
+
+              const participantIndex = participants.indexOf(email);
+              if (participantIndex !== -1) {
+                participants.splice(participantIndex, 1);
+              }
+              participant.remove();
+              activityCard.querySelector(".participant-count").textContent = participants.length;
+              activityCard.querySelector(".availability-count").textContent =
+                `${details.max_participants - participants.length} spots left`;
+
+              if (participants.length === 0) {
+                const emptyMessage = document.createElement("li");
+                emptyMessage.className = "participant-empty";
+                emptyMessage.textContent = "No participants yet";
+                participantList.appendChild(emptyMessage);
+              }
+
+              messageDiv.textContent = result.message;
+              messageDiv.className = "success";
+              messageDiv.classList.remove("hidden");
+            } catch (error) {
+              messageDiv.textContent = error.message || "Failed to cancel signup";
+              messageDiv.className = "error";
+              messageDiv.classList.remove("hidden");
+            } finally {
+              removeButton.disabled = false;
+            }
+          });
+
+          participant.appendChild(participantEmail);
+          participant.appendChild(removeButton);
+          participantList.appendChild(participant);
+        });
 
         activitiesList.appendChild(activityCard);
 
@@ -62,6 +137,7 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
